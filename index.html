@@ -231,6 +231,19 @@
       box-shadow:0 6px 24px rgba(200,80,160,.45); display:none; align-items:center; justify-content:center; z-index:100;
     }
 
+    /* Save status */
+    .save-status { font-size:.75rem; font-weight:700; color:var(--p600); min-width:80px; text-align:right; }
+
+    /* Loading overlay */
+    #loading-screen {
+      position:fixed; inset:0; background:var(--bg);
+      display:flex; flex-direction:column; align-items:center; justify-content:center;
+      z-index:9999; gap:14px;
+    }
+    #loading-screen .ls-emoji { font-size:3.5rem; animation:spin 2s linear infinite; }
+    #loading-screen p { font-size:1rem; font-weight:800; color:var(--p600); }
+    @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+
     /* Responsive */
     @media(max-width:600px) {
       .fc { grid-template-columns:1fr; }
@@ -245,6 +258,11 @@
   </style>
 </head>
 <body>
+
+<div id="loading-screen">
+  <span class="ls-emoji">🌸</span>
+  <p>Loading your holiday…</p>
+</div>
 
 <header>
   <img class="hk-logo" src="https://pngimg.com/uploads/hello_kitty/hello_kitty_PNG17.png" alt="Hello Kitty">
@@ -269,6 +287,7 @@
       <div class="leg-item"><div class="leg-dot" style="background:#A8C8F0"></div>Transport</div>
       <div class="leg-item"><div class="leg-dot" style="background:#F0C4DC"></div>Note</div>
     </div>
+    <span class="save-status" id="save-status"></span>
     <button class="btn-primary" id="add-btn">♥ Add event</button>
   </div>
   <div id="cal"></div>
@@ -383,9 +402,7 @@
 </div>
 
 <script>
-/* ── Config ── */
-const STORE = 'hk_holiday_v2';
-
+/* ── Categories ── */
 const CATS = {
   flight:    { e:'✈️',  c:'#A8D4F0', lbl:'Flight'    },
   hotel:     { e:'🏨',  c:'#C8A8E8', lbl:'Hotel'     },
@@ -395,56 +412,60 @@ const CATS = {
   note:      { e:'🌸',  c:'#F0C4DC', lbl:'Note'      },
 };
 
-/* ── IndexedDB ── */
-const IDB_NAME  = 'hk_files_v1';
-const IDB_STORE = 'attachments';
-let idb = null;
+/* ── Server API ── */
+async function apiLoad() {
+  const res = await fetch('/api/data');
+  if (!res.ok) throw new Error('Load failed');
+  return await res.json();
+}
 
-function openIDB() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(IDB_NAME, 1);
-    req.onupgradeneeded = e => e.target.result.createObjectStore(IDB_STORE, { keyPath: 'evId' });
-    req.onsuccess  = e => resolve(e.target.result);
-    req.onerror    = e => reject(e.target.error);
-  });
+async function apiSave(data) {
+  setSaveStatus('saving');
+  try {
+    const res = await fetch('/api/data', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error('Save failed');
+    setSaveStatus('saved');
+  } catch {
+    setSaveStatus('error');
+  }
 }
-function idbSave(evId, file) {
-  return file.arrayBuffer().then(data => new Promise((resolve, reject) => {
-    const tx = idb.transaction(IDB_STORE, 'readwrite');
-    tx.objectStore(IDB_STORE).put({ evId, name: file.name, type: file.type, size: file.size, data });
-    tx.oncomplete = resolve;
-    tx.onerror    = e => reject(e.target.error);
-  }));
+
+async function apiUpload(evId, file) {
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('evId', evId);
+  const res = await fetch('/api/upload', { method: 'POST', body: fd });
+  if (!res.ok) throw new Error('Upload failed');
+  return res.json(); // { name, size, type }
 }
-function idbGet(evId) {
-  return new Promise((resolve, reject) => {
-    const tx  = idb.transaction(IDB_STORE, 'readonly');
-    const req = tx.objectStore(IDB_STORE).get(evId);
-    req.onsuccess = e => resolve(e.target.result || null);
-    req.onerror   = e => reject(e.target.error);
-  });
+
+async function apiDeleteFile(evId) {
+  await fetch(`/api/file/${evId}`, { method: 'DELETE' }).catch(() => {});
 }
-function idbDel(evId) {
-  return new Promise((resolve, reject) => {
-    const tx = idb.transaction(IDB_STORE, 'readwrite');
-    tx.objectStore(IDB_STORE).delete(evId);
-    tx.oncomplete = resolve;
-    tx.onerror    = e => reject(e.target.error);
-  });
+
+function fileUrl(evId) { return `/api/file/${evId}`; }
+
+/* ── Save status indicator ── */
+let saveTimer = null;
+function setSaveStatus(state) {
+  const el = document.getElementById('save-status');
+  clearTimeout(saveTimer);
+  if (state === 'saving') { el.textContent = '💾 Saving…'; }
+  else if (state === 'saved') { el.textContent = '✓ Saved'; saveTimer = setTimeout(() => { el.textContent = ''; }, 2500); }
+  else { el.textContent = '⚠️ Save failed'; saveTimer = setTimeout(() => { el.textContent = ''; }, 4000); }
 }
 
 /* ── App data ── */
-function loadData() {
-  try { return JSON.parse(localStorage.getItem(STORE)) || def(); }
-  catch { return def(); }
-}
 function def() {
   const t = new Date(), fmt = d => d.toISOString().slice(0,10);
   const e = new Date(t); e.setDate(e.getDate()+13);
   return { trip:{ name:'My Holiday', dest:'', start:fmt(t), end:fmt(e) }, events:[] };
 }
-function persist() { localStorage.setItem(STORE, JSON.stringify(app)); }
-let app = loadData();
+let app = def();
 
 /* ── Helpers ── */
 function uid() { return Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
@@ -476,18 +497,15 @@ function showHasFile(name, size, type) {
 
 document.getElementById('ev-file').addEventListener('change', e => {
   const f = e.target.files[0]; if(!f) return;
-  pendingFile  = f;
-  doRemoveFile = false;
+  pendingFile = f; doRemoveFile = false;
   showHasFile(f.name, f.size, f.type);
 });
 
 document.getElementById('rm-file-btn').addEventListener('click', () => {
-  pendingFile  = null;
-  doRemoveFile = true;
-  showNoFile();
+  pendingFile = null; doRemoveFile = true; showNoFile();
 });
 
-document.getElementById('open-file-btn').addEventListener('click', async () => {
+document.getElementById('open-file-btn').addEventListener('click', () => {
   if (pendingFile) {
     const url = URL.createObjectURL(pendingFile);
     window.open(url, '_blank');
@@ -495,13 +513,7 @@ document.getElementById('open-file-btn').addEventListener('click', async () => {
     return;
   }
   const id = document.getElementById('eid').value;
-  if (!id || !idb) return;
-  const rec = await idbGet(id);
-  if (!rec) return;
-  const blob = new Blob([rec.data], { type: rec.type });
-  const url  = URL.createObjectURL(blob);
-  window.open(url, '_blank');
-  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  if (id) window.open(fileUrl(id), '_blank');
 });
 
 /* ── Calendar layout ── */
@@ -616,12 +628,11 @@ function openAdd(date) {
   document.getElementById('eid').value='';
   document.getElementById('ev-sd').value=date||(app.trip.start||'');
   document.getElementById('c-flight').checked=true;
-  doRemoveFile=false;
-  showNoFile();
+  doRemoveFile=false; showNoFile();
   openM('ev-modal');
 }
 
-async function openEdit(id) {
+function openEdit(id) {
   const ev=app.events.find(e=>e.id===id);if(!ev)return;
   document.getElementById('m-title').textContent='✏️ Edit event';
   document.getElementById('save-btn').textContent='Update ♥';
@@ -638,9 +649,9 @@ async function openEdit(id) {
   const ci=document.getElementById('c-'+(ev.category||'flight'));
   if(ci)ci.checked=true;
   doRemoveFile=false;
-  if(idb&&ev.hasAttachment){
-    const rec=await idbGet(id);
-    rec?showHasFile(rec.name,rec.size,rec.type):showNoFile();
+  // Show attachment info from metadata stored in the event
+  if(ev.hasAttachment&&ev.attachment){
+    showHasFile(ev.attachment.name, ev.attachment.size, ev.attachment.type);
   } else { showNoFile(); }
   openM('ev-modal');
 }
@@ -650,6 +661,7 @@ document.getElementById('ev-form').addEventListener('submit', async e => {
   const id=document.getElementById('eid').value;
   const sd=document.getElementById('ev-sd').value;
   const ed=document.getElementById('ev-ed').value;
+  const existing=app.events.find(e=>e.id===id);
   const ev={
     id:id||uid(),
     category:document.querySelector('input[name="cat"]:checked')?.value||'note',
@@ -659,31 +671,38 @@ document.getElementById('ev-form').addEventListener('submit', async e => {
     desc:document.getElementById('ev-desc').value.trim(),
     link:document.getElementById('ev-link').value.trim(),
     linkLabel:document.getElementById('ev-lbl').value.trim(),
-    hasAttachment:false,
+    hasAttachment: existing?.hasAttachment||false,
+    attachment: existing?.attachment||null,
   };
   if(!ev.title||!ev.startDate)return;
 
-  if(pendingFile&&idb){
-    await idbSave(ev.id,pendingFile);
-    ev.hasAttachment=true;
-  } else if(doRemoveFile&&id&&idb){
-    await idbDel(id);
-    ev.hasAttachment=false;
-  } else if(id){
-    ev.hasAttachment=app.events.find(e=>e.id===id)?.hasAttachment||false;
+  // Handle file changes
+  if(pendingFile){
+    try {
+      const meta = await apiUpload(ev.id, pendingFile);
+      ev.hasAttachment = true;
+      ev.attachment = { name: meta.name, size: meta.size, type: meta.type };
+    } catch { alert('File upload failed — event saved without attachment.'); }
+  } else if(doRemoveFile&&id){
+    await apiDeleteFile(id);
+    ev.hasAttachment = false;
+    ev.attachment = null;
   }
 
   if(id){const i=app.events.findIndex(e=>e.id===id);if(i>=0)app.events[i]=ev;}
   else app.events.push(ev);
-  persist();closeM('ev-modal');render();
+  await apiSave(app);
+  closeM('ev-modal'); render();
 });
 
 document.getElementById('del-btn').addEventListener('click', async () => {
   const id=document.getElementById('eid').value;
   if(!id||!confirm('Delete this event? 🗑'))return;
-  if(idb)idbDel(id).catch(()=>{});
+  const ev=app.events.find(e=>e.id===id);
+  if(ev?.hasAttachment) apiDeleteFile(id);
   app.events=app.events.filter(e=>e.id!==id);
-  persist();closeM('ev-modal');render();
+  await apiSave(app);
+  closeM('ev-modal'); render();
 });
 
 document.getElementById('add-btn').addEventListener('click',()=>openAdd(null));
@@ -697,16 +716,27 @@ document.getElementById('edit-trip-btn').addEventListener('click',()=>{
   document.getElementById('t-end').value=app.trip.end||'';
   openM('trip-modal');
 });
-document.getElementById('save-trip').addEventListener('click',()=>{
+document.getElementById('save-trip').addEventListener('click', async ()=>{
   app.trip.name=document.getElementById('t-name').value.trim()||'My Holiday';
   app.trip.dest=document.getElementById('t-dest').value.trim();
   app.trip.start=document.getElementById('t-start').value;
   app.trip.end=document.getElementById('t-end').value;
-  persist();closeM('trip-modal');render();
+  await apiSave(app);
+  closeM('trip-modal'); render();
 });
 
 /* ── Init ── */
-openIDB().then(db=>{idb=db;}).catch(()=>{}).finally(()=>render());
+async function init() {
+  try {
+    const data = await apiLoad();
+    if (data) app = data;
+  } catch {
+    // API not available (e.g. local preview) — use defaults
+  }
+  document.getElementById('loading-screen').style.display = 'none';
+  render();
+}
+init();
 </script>
 </body>
 </html>
