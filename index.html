@@ -122,9 +122,16 @@
     .event-bar:hover { filter:brightness(1.12) saturate(1.1); transform:scaleY(1.07); z-index:10; }
     .bar-e { font-size:.75rem; flex-shrink:0; }
     .bar-t { overflow:hidden; text-overflow:ellipsis; flex:1; min-width:0; }
-    .bar-time { font-size:.62rem; flex-shrink:0; opacity:.75; font-weight:700; white-space:nowrap; }
+    .bar-time { font-size:.62rem; flex-shrink:1; min-width:0; opacity:.75; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .bar-arr { font-size:.6rem; flex-shrink:0; opacity:.85; }
-    .bar-clip { font-size:.65rem; flex-shrink:0; opacity:.8; }
+    /* Clickable attachment button on bars */
+    .bar-clip-btn {
+      background:none; border:none; padding:0 1px; cursor:pointer;
+      font-size:.72rem; flex-shrink:0; opacity:.85; line-height:1;
+      display:flex; align-items:center; border-radius:4px;
+      transition:opacity .15s, transform .1s;
+    }
+    .bar-clip-btn:hover { opacity:1; transform:scale(1.25); }
     .no-events-msg { padding:10px 14px; font-size:.78rem; color:var(--mut); font-style:italic; font-weight:700; }
 
     /* No-trip state */
@@ -725,6 +732,22 @@ function hidePopoverImmediate() {
 
 function cancelHidePopover() { clearTimeout(popTimer); }
 
+// Clicking the 📎 on a bar: open single file directly, or show popover for multiple
+function openFirstAttachment(e, evId) {
+  e.stopPropagation(); // don't trigger bar click → edit
+  const ev = app.events.find(x => x.id === evId);
+  if (!ev) return;
+  const atts = getAttachments(ev);
+  if (!atts.length) return;
+  if (atts.length === 1) {
+    window.open(fileUrl(atts[0].id), '_blank');
+  } else {
+    // Multiple attachments — show the detail popover so user can pick
+    if (isTouch()) showPopoverTouch(evId);
+    else showPopover(e, evId);
+  }
+}
+
 function openEditFromPopover() {
   const id = popEvId;
   hidePopoverImmediate();
@@ -814,18 +837,28 @@ function renderCal() {
       const lane=asgn[ev.id];if(lane===undefined)return'';
       const cols=cm[ev.id];if(!cols)return'';
       const{si,ei,prevCont,nextCont}=cols;
+      const span=ei-si+1;
       const cw=100/wk.length;
-      const left=(si*cw+0.3).toFixed(2),width=((ei-si+1)*cw-0.6).toFixed(2);
+      const left=(si*cw+0.3).toFixed(2),width=(span*cw-0.6).toFixed(2);
       const top=4+lane*26,cat=CATS[ev.category]||CATS.note;
       const rTL=prevCont?'0':'10px',rTR=nextCont?'0':'10px';
       const rBL=prevCont?'0':'10px',rBR=nextCont?'0':'10px';
-      // Build time string: show start and end if available
+      // On narrow (1-col) bars only show start time to avoid truncation;
+      // wider bars show start–end range
       let timeStr = '';
-      if (ev.startTime && ev.endTime) timeStr = `${fmtTime(ev.startTime)}–${fmtTime(ev.endTime)}`;
-      else if (ev.startTime) timeStr = fmtTime(ev.startTime);
+      if (span === 1) {
+        if (ev.startTime) timeStr = fmtTime(ev.startTime);
+      } else {
+        if (ev.startTime && ev.endTime) timeStr = `${fmtTime(ev.startTime)}–${fmtTime(ev.endTime)}`;
+        else if (ev.startTime) timeStr = fmtTime(ev.startTime);
+      }
       const timeSpan = timeStr ? `<span class="bar-time">${timeStr}</span>` : '';
-      const hasAtts = getAttachments(ev).length > 0;
-      const clip = hasAtts ? '<span class="bar-clip">📎</span>' : '';
+      const atts = getAttachments(ev);
+      const clip = atts.length
+        ? `<button type="button" class="bar-clip-btn"
+             onclick="openFirstAttachment(event,'${ev.id}')"
+             title="Open attachment">📎</button>`
+        : '';
       const titleAttr = `${esc(ev.title)}${timeStr ? ' · '+timeStr : ''}`;
       return`<div class="event-bar"
         style="left:${left}%;width:${width}%;top:${top}px;background:${cat.c};border-radius:${rTL} ${rTR} ${rBR} ${rBL}"
