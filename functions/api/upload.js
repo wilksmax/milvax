@@ -20,16 +20,16 @@ export async function onRequest({ request, env }) {
     return new Response('Invalid form data', { status: 400, headers: CORS });
   }
 
-  const file = formData.get('file');
-  const evId = formData.get('evId');
+  const file   = formData.get('file');
+  const fileId = formData.get('fileId');
 
-  if (!file || !evId) {
-    return new Response('Missing file or evId', { status: 400, headers: CORS });
+  if (!file || !fileId) {
+    return new Response('Missing file or fileId', { status: 400, headers: CORS });
   }
 
   const buffer = await file.arrayBuffer();
 
-  await env.TRIP_FILES.put(evId, buffer, {
+  await env.TRIP_FILES.put(fileId, buffer, {
     httpMetadata: {
       contentType: file.type || 'application/octet-stream',
       contentDisposition: `inline; filename="${file.name}"`,
@@ -42,7 +42,7 @@ export async function onRequest({ request, env }) {
   });
 
   return new Response(
-    JSON.stringify({ ok: true, name: file.name, size: file.size, type: file.type }),
+    JSON.stringify({ ok: true, id: fileId, name: file.name, size: file.size, type: file.type }),
     { headers: { ...CORS, 'Content-Type': 'application/json' } }
   );
 }
