@@ -112,14 +112,14 @@
       position:absolute; height:34px;
       display:flex; flex-direction:column; justify-content:center; gap:1px;
       padding:2px 7px; cursor:pointer; color:#4a1e3a;
-      font-weight:800; overflow:visible;
+      font-weight:800; overflow:hidden;
       font-family:var(--f); transition:filter .15s; z-index:1;
     }
     .event-bar:hover { filter:brightness(1.12) saturate(1.1); z-index:10; }
-    /* Title — one line, full text (never truncated / ellipsed) */
-    .bar-t  { white-space:nowrap; overflow:visible; font-size:.6rem; line-height:1.2; }
-    /* Time — one line, smaller text */
-    .bar-time { font-size:.52rem; font-weight:700; opacity:.72; white-space:nowrap; line-height:1.2; }
+    /* Title — one line, hard-clipped at the card edge (no ellipsis) */
+    .bar-t  { white-space:nowrap; overflow:hidden; text-overflow:clip; font-size:.6rem; line-height:1.2; }
+    /* Time — one line, hard-clipped, smaller text */
+    .bar-time { font-size:.52rem; font-weight:700; opacity:.72; white-space:nowrap; overflow:hidden; text-overflow:clip; line-height:1.2; }
     .no-events-msg { padding:10px 14px; font-size:.78rem; color:var(--mut); font-style:italic; font-weight:700; }
 
     /* No-trip state */
