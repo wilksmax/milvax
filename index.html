@@ -96,39 +96,30 @@
     .week-hdr { display:grid; grid-template-columns:repeat(7,1fr); background:linear-gradient(135deg,#ffc4e1,#e0519e); }
     .col-hdr { text-align:center; padding:8px 2px; font-size:.7rem; font-weight:900; color:#fff; letter-spacing:.07em; text-transform:uppercase; }
     .week-dates { display:grid; grid-template-columns:repeat(7,1fr); border-bottom:1.5px solid var(--bdr); }
-    .date-cell { padding:7px 5px 6px; min-height:52px; border-right:1px solid var(--bdr); position:relative; background:#fff; }
+    .date-cell { padding:7px 5px 6px; min-height:52px; border-right:1px solid var(--bdr); position:relative; background:#fff; cursor:pointer; transition:background .12s; }
     .date-cell:last-child { border-right:none; }
-    .date-cell.empty { background:var(--p50); }
+    .date-cell:not(.empty):hover { background:var(--p50); }
+    .date-cell:not(.empty):active { background:var(--p100); }
+    .date-cell.empty { background:var(--p50); cursor:default; }
     .date-cell.today .date-num { background:var(--p600); color:#fff; box-shadow:0 2px 8px rgba(200,80,160,.4); }
     .date-inner { display:flex; flex-direction:column; align-items:center; gap:1px; }
     .date-num { width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:.84rem; font-weight:800; color:var(--txt); }
     .date-mon { font-size:.58rem; font-weight:800; color:var(--p500); text-transform:uppercase; letter-spacing:.05em; }
-    .date-add {
-      position:absolute; bottom:4px; right:4px; width:20px; height:20px; border-radius:50%;
-      background:var(--p100); border:1.5px solid var(--p300); color:var(--p600);
-      font-size:.9rem; font-weight:900; cursor:pointer; display:flex; align-items:center;
-      justify-content:center; opacity:0; transition:opacity .15s; font-family:var(--f); line-height:1;
-    }
-    .date-cell:hover .date-add { opacity:1; }
 
     /* Events area */
     .week-events { position:relative; padding:4px 0; }
     .event-bar {
-      position:absolute; height:auto; min-height:24px;
-      display:flex; flex-direction:column; gap:1px;
-      padding:3px 7px 4px; cursor:pointer; color:#4a1e3a;
-      font-size:.7rem; font-weight:800; overflow:hidden;
+      position:absolute; height:34px;
+      display:flex; flex-direction:column; justify-content:center; gap:1px;
+      padding:2px 7px; cursor:pointer; color:#4a1e3a;
+      font-weight:800; overflow:visible;
       font-family:var(--f); transition:filter .15s; z-index:1;
     }
     .event-bar:hover { filter:brightness(1.12) saturate(1.1); z-index:10; }
-    /* Top row: emoji + title + clip icon + continuation arrows */
-    .bar-row { display:flex; align-items:flex-start; gap:3px; width:100%; }
-    .bar-e  { font-size:.75rem; flex-shrink:0; margin-top:1px; }
-    .bar-t  { white-space:normal; word-break:break-word; flex:1; min-width:0; line-height:1.35; }
-    .bar-arr{ font-size:.6rem; flex-shrink:0; opacity:.85; margin-top:2px; }
-    .bar-clip{ font-size:.65rem; flex-shrink:0; opacity:.8; margin-top:1px; }
-    /* Time shown on its own row below the title */
-    .bar-time { font-size:.6rem; font-weight:700; opacity:.72; padding-left:19px; white-space:nowrap; }
+    /* Title — one line, full text (never truncated / ellipsed) */
+    .bar-t  { white-space:nowrap; overflow:visible; font-size:.6rem; line-height:1.2; }
+    /* Time — one line, smaller text */
+    .bar-time { font-size:.52rem; font-weight:700; opacity:.72; white-space:nowrap; line-height:1.2; }
     .no-events-msg { padding:10px 14px; font-size:.78rem; color:var(--mut); font-style:italic; font-weight:700; }
 
     /* No-trip state */
@@ -316,8 +307,6 @@
       .date-num { width:24px; height:24px; font-size:.76rem; }
       .fab { display:flex; }
       .btn-primary { display:none; }
-      /* Always show + button on touch screens */
-      .date-add { opacity:1; }
       /* Prevent iOS input zoom */
       .fr input, .fr textarea, .fr select { font-size:16px !important; }
     }
@@ -362,10 +351,10 @@
 <button class="fab" id="fab">＋</button>
 
 <!-- Backdrop for mobile popover -->
-<div id="pop-backdrop" onclick="hidePopoverImmediate()"></div>
+<div id="pop-backdrop" onclick="evPopClose()"></div>
 
 <!-- Hover popover / tap sheet -->
-<div id="ev-popover" onmouseenter="cancelHidePopover()" onmouseleave="hidePopover()"></div>
+<div id="ev-popover" onmouseenter="evPopKeep()" onmouseleave="evPopHide()"></div>
 
 <!-- Event modal -->
 <div class="overlay" id="ev-modal">
@@ -666,14 +655,18 @@ function buildPopoverContent(evId) {
     </div>
     <div class="pop-footer">
       <button type="button" class="btn-sec" style="font-size:.82rem;padding:7px 14px"
-        onclick="hidePopoverImmediate()">Close</button>
+        onclick="evPopClose()">Close</button>
       <button type="button" class="btn-save" style="font-size:.82rem;padding:7px 16px"
         onclick="openEditFromPopover()">✏️ Edit</button>
     </div>`;
 }
 
+// NOTE: function names are deliberately prefixed `evPop` — `showPopover`
+// and `hidePopover` are now native HTMLElement methods (Popover API) and
+// would shadow our globals inside inline on* handlers.
+
 // Desktop hover — show popover anchored to bar
-function showPopover(e, evId) {
+function evPopShow(e, evId) {
   if (isTouch()) return; // touch devices use tap handler instead
   clearTimeout(popTimer);
   popEvId = evId;
@@ -702,7 +695,7 @@ function showPopover(e, evId) {
 }
 
 // Touch tap — show popover as bottom sheet with backdrop
-function showPopoverTouch(evId) {
+function evPopShowTouch(evId) {
   clearTimeout(popTimer);
   popEvId = evId;
   const pop = document.getElementById('ev-popover');
@@ -711,25 +704,25 @@ function showPopoverTouch(evId) {
   document.getElementById('pop-backdrop').style.display = 'block';
 }
 
-function hidePopover() {
+function evPopHide() {
   // Delayed hide — cancelled if mouse enters popover
   popTimer = setTimeout(() => {
     document.getElementById('ev-popover').style.display = 'none';
   }, 150);
 }
 
-function hidePopoverImmediate() {
+function evPopClose() {
   clearTimeout(popTimer);
   document.getElementById('ev-popover').style.display = 'none';
   document.getElementById('pop-backdrop').style.display = 'none';
   popEvId = null;
 }
 
-function cancelHidePopover() { clearTimeout(popTimer); }
+function evPopKeep() { clearTimeout(popTimer); }
 
 function openEditFromPopover() {
   const id = popEvId;
-  hidePopoverImmediate();
+  evPopClose();
   if (id) openEdit(id);
 }
 
@@ -737,7 +730,7 @@ function openEditFromPopover() {
 function handleBarClick(e, evId) {
   e.stopPropagation();
   if (isTouch()) {
-    showPopoverTouch(evId);
+    evPopShowTouch(evId);
   } else {
     openEdit(evId);
   }
@@ -745,7 +738,7 @@ function handleBarClick(e, evId) {
 
 // Close popover when tapping outside (desktop)
 document.addEventListener('click', () => {
-  if (!isTouch()) hidePopoverImmediate();
+  if (!isTouch()) evPopClose();
 });
 
 /* ── Calendar layout ── */
@@ -800,16 +793,16 @@ function renderCal() {
     const wkEvs=app.events.filter(ev=>{const s=ev.startDate||ev.date,e=ev.endDate||s;return s&&e&&s<=we&&e>=ws;});
     const{asgn,cm}=assignLanes(wkEvs,wk);
     const maxL=wkEvs.length?Math.max(...Object.values(asgn))+1:0;
-    const evH=maxL*40+10;
+    const LANE=38;                       // fixed bar (34px) + gap
+    const evH=maxL*LANE+8;
     const hdr=wk.map(d=>d?`<div class="col-hdr">${DAY_NAMES[new Date(d+'T00:00:00').getDay()]}</div>`:`<div class="col-hdr"></div>`).join('');
     const cells=wk.map(d=>{
       if(!d)return`<div class="date-cell empty"></div>`;
       const dt=new Date(d+'T00:00:00'),num=dt.getDate(),isToday=d===today;
       const showMon=num===1||d===ws;
       const mon=dt.toLocaleDateString('en-GB',{month:'short'});
-      return`<div class="date-cell${isToday?' today':''}">
+      return`<div class="date-cell${isToday?' today':''}" onclick="openAdd('${d}')" title="Add an event on ${esc(fmtShort(d))}">
         <div class="date-inner">${showMon?`<span class="date-mon">${mon}</span>`:''}<span class="date-num">${num}</span></div>
-        <button class="date-add" onclick="openAdd('${d}')">+</button>
       </div>`;
     }).join('');
     const bars=wkEvs.map(ev=>{
@@ -819,11 +812,10 @@ function renderCal() {
       const span=ei-si+1;
       const cw=100/wk.length;
       const left=(si*cw+0.3).toFixed(2),width=(span*cw-0.6).toFixed(2);
-      const top=4+lane*40,cat=CATS[ev.category]||CATS.note;
+      const top=4+lane*LANE,cat=CATS[ev.category]||CATS.note;
       const rTL=prevCont?'0':'10px',rTR=nextCont?'0':'10px';
       const rBL=prevCont?'0':'10px',rBR=nextCont?'0':'10px';
-      // Single-day events: only show start time (bar is narrow).
-      // Multi-day events: show start–end range.
+      // Single-day events: only the start time. Multi-day: start–end range.
       let timeStr = '';
       if (span === 1) {
         if (ev.startTime) timeStr = fmtTime(ev.startTime);
@@ -831,23 +823,15 @@ function renderCal() {
         if (ev.startTime && ev.endTime) timeStr = `${fmtTime(ev.startTime)} – ${fmtTime(ev.endTime)}`;
         else if (ev.startTime) timeStr = fmtTime(ev.startTime);
       }
-      const hasAtts = getAttachments(ev).length > 0;
-      const clip = hasAtts ? '<span class="bar-clip">📎</span>' : '';
       const titleAttr = `${esc(ev.title)}${timeStr ? ' · '+timeStr : ''}`;
       return`<div class="event-bar"
         style="left:${left}%;width:${width}%;top:${top}px;background:${cat.c};border-radius:${rTL} ${rTR} ${rBR} ${rBL}"
         onclick="handleBarClick(event,'${ev.id}')"
-        onmouseenter="showPopover(event,'${ev.id}')"
-        onmouseleave="hidePopover()"
+        onmouseenter="evPopShow(event,'${ev.id}')"
+        onmouseleave="evPopHide()"
         title="${titleAttr}">
-        <div class="bar-row">
-          ${prevCont?'<span class="bar-arr">◄</span>':''}
-          <span class="bar-e">${cat.e}</span>
-          <span class="bar-t">${esc(ev.title)}</span>
-          ${clip}
-          ${nextCont?'<span class="bar-arr" style="margin-left:auto">►</span>':''}
-        </div>
-        ${timeStr?`<div class="bar-time">${timeStr}</div>`:''}
+        <span class="bar-t">${esc(ev.title)}</span>
+        ${timeStr?`<span class="bar-time">${timeStr}</span>`:''}
       </div>`;
     }).join('');
     const wLabel=`Week ${wi+1} · ${fmtShort(ws)}${we!==ws?' – '+fmtShort(we):''}`;
