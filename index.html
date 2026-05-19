@@ -514,7 +514,24 @@ function def() {
 let app = def();
 
 /* ── Helpers ── */
-function uid() { return Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
+// Collision-proof unique ID. Used for event IDs AND R2 file keys, so a
+// weak generator here means one upload can silently overwrite another
+// file in R2. crypto.randomUUID() gives 122 bits of entropy; we fall
+// back to crypto.getRandomValues, and only to Math.random() as a last
+// resort (still far stronger than the old timestamp+4-char scheme).
+function uid() {
+  try {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    if (window.crypto && crypto.getRandomValues) {
+      const b = crypto.getRandomValues(new Uint8Array(16));
+      return Date.now().toString(36) + '-' +
+        Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+    }
+  } catch (_) { /* fall through */ }
+  return Date.now().toString(36) + '-' +
+    Math.random().toString(36).slice(2) +
+    Math.random().toString(36).slice(2);
+}
 function esc(s){ return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function dateRange(a,b){ if(!a||!b)return[]; const out=[],cur=new Date(a+'T00:00:00'),last=new Date(b+'T00:00:00'); while(cur<=last){out.push(cur.toISOString().slice(0,10));cur.setDate(cur.getDate()+1);} return out; }
 function fmtShort(iso){ if(!iso)return''; return new Date(iso+'T00:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short'}); }
